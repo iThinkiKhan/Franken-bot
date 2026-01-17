@@ -1,8 +1,8 @@
 # Franken-bot (Frank)
 
-This one project brought so many things that I have fallen in love with together. I think its fair to say this is pushing what people can do/have done with ESP32s. 
+This one project brought so many things that I have fallen in love with together. I think its fair to say this is pushing what people can do/have done with ESP32s. I set out to upgrade the brain and display (2.8in touch w/ SD card slot) of the StackChan to improve usability as a desk companion. I ended up fundamentally changing the project from a cute robot AI demo to an embedded AI system that happens to be a robot.
 
-I decided to upgrade the brain and display (2.8in touch w/ SD card slot) of the StackChan to improve usability as a desk companion. I ended up fundamentally changing the project from a cute robot AI demo to an embedded AI system that happens to be a robot. There is LOTS of room for expansion. I also wanted to use common, cheap/salvaged parts and 3d prints I could order from the local library. This code is 100% original and shares no lines in common with the official firmware. 
+I also wanted to use common, cheap/salvaged parts and 3d prints I could order from the local library. This code is 100% original and shares no lines in common with the official firmware. There is LOTS of room for expansion. 
 
 
 **Software:**
