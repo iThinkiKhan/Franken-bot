@@ -1,6 +1,6 @@
 # Franken-bot (Frank)
  
-I decided to upgrade the brain and display of the bot, primarily. I also wanted to use common parts and 3d prints I could order from the local library. 
+I decided to upgrade the brain and display of the StackChan to improve usability as a desk companion. I also wanted to use common, cheap/salvaged parts and 3d prints I could order from the local library. 
 
 **Hardware**
 Brain - Lonely Binary ESP32-S3 N16R8. 16MB flash, 8MB octal PSRAM. Powerful chip by esp32 standards. We need it to drive all the functions.
