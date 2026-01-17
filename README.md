@@ -1,10 +1,19 @@
 # Franken-bot (Frank)
- 
+
+This one project brought so many things that I have fallen in love together. I think its fair to say this is pushing what people can do/have done with ESP32s. 
+
 I decided to upgrade the brain and display (2.8in touch w/ SD card slot) of the StackChan to improve usability as a desk companion. I also wanted to use common, cheap/salvaged parts and 3d prints I could order from the local library. This code is 100% original and shares no lines in common with the official firmware. 
 
 **Software:**
 
 _I believe I have made considerable improvements to the stock firmware, such as removing the local speech processing in favor of sending a raw audio file to the LLM freeing memory and enabling much more nuance in audio processing. There are many more, and I continue to improve it regularly. Please share your ideas for improvements!_
+
+   **OSv3.0**
+   -Recording raw WAV file, encoding it and sending to Gemini as a JSON rather than local speech to text
+   -Automatically detect ambient noise level, set mic level accordingly
+   -Variable spoken prompt length - no wasted bytes. This involves checks and balances.
+   -More memory optimization - working around ESP32s internal heap memory and writing+encoding JSON string in PSRAM. Setting bank of PSRAM aside for audio prompt recordings up to 30 seconds. 
+   -Ditched LLM auto selection and model agnostic framework in favor of immediate functionality. Will add back later.
 
    **OSv2.6**
    -Working LLM response to audio! By far the most complex stack I've ever built.
