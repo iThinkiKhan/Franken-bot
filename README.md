@@ -3,13 +3,11 @@
 I decided to upgrade the brain and display of the bot, primarily. I also wanted to use common parts and 3d prints I could order from the local library. 
 
 **Hardware**
-Brain - Lonely Binary ESP32-S3 N16R8. 16MB flash, 8MB octal PSRAM. Powerful little chip by esp32 standards. We need it to drive all the functions.
+Brain - Lonely Binary ESP32-S3 N16R8. 16MB flash, 8MB octal PSRAM. Powerful chip by esp32 standards. We need it to drive all the functions.
 
 Display - 2.8" IL19341 Touch Screen. SPI interface (important to keep cables down) 320x240 resolution. This should enable us to display all kinds of data effectively, or act as a button, etc. This also gives us an SD slot.
 
-Movement - 2x SG90 Servos. Can be upgraded to x6 for walking version.
-
-**_Warning_** -Some of the pins on this board are used for the extra RAM. Do not use those pins. 
+Movement - 2x SG90 Servos. Can be upgraded to x6 for walking capability (untested).
 
 **3D Printing & Assembly**
 
@@ -30,7 +28,7 @@ IDE: VS Code + PlatformIO
 Framework: Arduino
 
 The "Dual Brain" System
-The firmware is designed to be model-agnostic, allowing hot-swapping between AI providers via a preprocessor flag (#define USE_GEMINI).
+The custom operating systems here are designed to be model-agnostic, allowing hot-swapping between AI providers via a preprocessor flag (comment out #define USE_GEMINI for OpenAI).
 
 _Primary Brain (Google Gemini)_:
 
@@ -113,6 +111,8 @@ GPIO 12: SPI SCK (Shared)
 GPIO 13: SPI MISO (Shared)
 GPIO 14: Touch CS
 GPIO 21: Screen Reset
+
+
 
 
 
