@@ -4,7 +4,7 @@ I decided to upgrade the brain and display (2.8in touch w/ SD card slot) of the 
 
 **Software:**
 
-_I believe I have made considerable improvements to the stock firmware, such as removing the local speech processing in favor of sending a raw audio file to the LLM. There are many more, and I continue to improve it regularly. Please share your ideas for improvements!_
+_I believe I have made considerable improvements to the stock firmware, such as removing the local speech processing in favor of sending a raw audio file to the LLM freeing memory and enabling much more nuance in audio processing. There are many more, and I continue to improve it regularly. Please share your ideas for improvements!_
 
    **OSv2.6**
    -Working LLM response to audio! By far the most complex stack I've ever built.
