@@ -28,7 +28,7 @@ IDE: VS Code + PlatformIO
 Framework: Arduino
 
 The "Dual Brain" System
-The custom operating systems here are designed to be model-agnostic, allowing hot-swapping between AI providers via a preprocessor flag (comment out #define USE_GEMINI for OpenAI).
+The custom operating systems here are designed to be model-agnostic, allowing hot-swapping between AI providers or local models via a preprocessor flag (comment out #define USE_GEMINI for OpenAI).
 
 _Primary Brain (Google Gemini)_:
 
