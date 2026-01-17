@@ -1,6 +1,6 @@
 # Franken-bot (Frank)
  
-I decided to upgrade the brain and display (2.8in touch w/ SD card slot) of the StackChan to improve usability as a desk companion. I also wanted to use common, cheap/salvaged parts and 3d prints I could order from the local library. This is code is 100% original and shares no lines in common with the official firmware. 
+I decided to upgrade the brain and display (2.8in touch w/ SD card slot) of the StackChan to improve usability as a desk companion. I also wanted to use common, cheap/salvaged parts and 3d prints I could order from the local library. This code is 100% original and shares no lines in common with the official firmware. 
 
 **Software:**
 _I believe I have made considerable improvements to the stock firmware, such as removing the local speech processing in favor of sending a raw audio file to the LLM. There are many more, and I continue to improve it regularly. Please share your ideas for improvements!_
