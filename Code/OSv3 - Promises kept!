@@ -1,0 +1,506 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include "Audio.h" 
+#include <TFT_eSPI.h>
+#include <ESP32Servo.h>
+#include <driver/i2s.h>
+#include "mbedtls/base64.h" 
+#include "Secrets.h"
+#include "freertos/semphr.h" 
+
+// ==============================
+//      PROJECT: FRANKEN-CHAN ("FRANK")
+//      VERSION: 5.1 (Clean Build / Pro Core)
+// ==============================
+
+// --- HARDWARE ---
+#define I2S_BCLK      4 
+#define I2S_LRC       5 
+#define I2S_DOUT      6  
+#define I2S_DIN       7  
+#define SCREEN_RST    21 
+#define I2S_PORT I2S_NUM_0
+
+// --- AUDIO SETTINGS ---
+#define SAMPLE_RATE 16000
+#define MAX_RECORD_SECONDS 30 
+#define MIN_RECORD_SECONDS 2 
+#define REC_BUFFER_SIZE (32000 * MAX_RECORD_SECONDS) 
+#define WAV_HEADER_SIZE 44
+#define SILENCE_TIMEOUT 1500 
+
+// CALIBRATION
+int NOISE_THRESHOLD = 500; 
+int BASELINE_NOISE = 0;
+
+// BUFFERS
+uint8_t* recBuffer; 
+char* jsonBuffer; 
+const size_t JSON_BUFFER_SIZE = 1500 * 1024; // Explicit size for safety
+size_t recordedLength = 0; 
+
+// --- STATE MANAGEMENT ---
+SemaphoreHandle_t sysMutex; // <--- THE GUARD DOG
+String currentStatus = "BOOTING"; 
+bool inSpeakerMode = false;
+bool driverInstalled = false; 
+unsigned long micCooldown = 0;
+
+// ANIMATION
+unsigned long lastBlink = 0;
+bool isBlinking = false;
+unsigned long lastMouthUpdate = 0;
+unsigned long lastFaceUpdate = 0; 
+unsigned long speakingStartTime = 0; 
+int mouthHeight = 10;
+bool mouthOpening = true;
+
+// AI STATE
+bool aiRequestPending = false;     
+bool aiResponseReady = false;      
+String globalResponse = "";        
+
+// --- GEMINI CONFIG ---
+String currentModel = "models/gemini-flash-latest"; 
+
+// --- GLOBALS ---
+Audio *audio = NULL; 
+TFT_eSPI tft = TFT_eSPI(); 
+TFT_eSprite face = TFT_eSprite(&tft); 
+TaskHandle_t aiTaskHandle = NULL; // <--- DEFINED HERE
+
+// ==============================
+//      HELPER: WAV HEADER
+// ==============================
+void createWavHeader(uint8_t* header, int waveDataSize){
+  header[0] = 'R'; header[1] = 'I'; header[2] = 'F'; header[3] = 'F';
+  unsigned int fileSize = waveDataSize + 36;
+  header[4] = (byte)(fileSize & 0xFF);
+  header[5] = (byte)((fileSize >> 8) & 0xFF);
+  header[6] = (byte)((fileSize >> 16) & 0xFF);
+  header[7] = (byte)((fileSize >> 24) & 0xFF);
+  header[8] = 'W'; header[9] = 'A'; header[10] = 'V'; header[11] = 'E';
+  header[12] = 'f'; header[13] = 'm'; header[14] = 't'; header[15] = ' ';
+  header[16] = 0x10; header[17] = 0x00; header[18] = 0x00; header[19] = 0x00;
+  header[20] = 0x01; header[21] = 0x00;
+  header[22] = 0x01; header[23] = 0x00; 
+  header[24] = 0x80; header[25] = 0x3E; header[26] = 0x00; header[27] = 0x00; 
+  header[28] = 0x00; header[29] = 0x7D; header[30] = 0x00; header[31] = 0x00; 
+  header[32] = 0x02; header[33] = 0x00; 
+  header[34] = 0x10; header[35] = 0x00; 
+  header[36] = 'd'; header[37] = 'a'; header[38] = 't'; header[39] = 'a';
+  header[40] = (byte)(waveDataSize & 0xFF);
+  header[41] = (byte)((waveDataSize >> 8) & 0xFF);
+  header[42] = (byte)((waveDataSize >> 16) & 0xFF);
+  header[43] = (byte)((waveDataSize >> 24) & 0xFF);
+}
+
+// ==============================
+//      DRIVER MANAGEMENT
+// ==============================
+// ==============================
+//      DRIVER MANAGEMENT (SILENCE FIX)
+// ==============================
+void enterMicMode() {
+    xSemaphoreTake(sysMutex, portMAX_DELAY); // LOCK
+
+    // 1. Clean up Speaker
+    if (audio != NULL) { delete audio; audio = NULL; } 
+    
+    // 2. Uninstall Driver
+    if (driverInstalled) { 
+        i2s_driver_uninstall(I2S_PORT); 
+        driverInstalled = false; 
+    }
+    
+    // --- FIX: FORCE PINS LOW (Silence the Amp) ---
+    // Floating pins (INPUT) caused the sonar clicking. 
+    // pulling them LOW forces the MAX98357A into shutdown.
+    pinMode(I2S_DOUT, OUTPUT); digitalWrite(I2S_DOUT, LOW);
+    pinMode(I2S_BCLK, OUTPUT); digitalWrite(I2S_BCLK, LOW);
+    pinMode(I2S_LRC, OUTPUT);  digitalWrite(I2S_LRC, LOW);
+    delay(50); 
+
+    // 3. Re-install Mic Driver
+    i2s_config_t i2s_config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
+        .sample_rate = SAMPLE_RATE,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count = 4,
+        .dma_buf_len = 512,
+        .use_apll = false,
+        .tx_desc_auto_clear = false,
+        .fixed_mclk = 0
+    };
+    i2s_pin_config_t pin_config = {
+        .bck_io_num = I2S_BCLK, .ws_io_num = I2S_LRC,
+        .data_out_num = -1, .data_in_num = I2S_DIN
+    };
+    
+    i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
+    i2s_set_pin(I2S_PORT, &pin_config);
+    i2s_zero_dma_buffer(I2S_PORT);
+    
+    driverInstalled = true;
+    inSpeakerMode = false;
+    micCooldown = millis() + 1000; 
+    currentStatus = "LISTENING"; 
+    
+    xSemaphoreGive(sysMutex); // UNLOCK
+}
+
+void enterSpeakerMode() {
+    xSemaphoreTake(sysMutex, portMAX_DELAY); // LOCK
+
+    if (driverInstalled) { 
+        i2s_driver_uninstall(I2S_PORT); 
+        driverInstalled = false; 
+    }
+
+    // Hard Reset Pins
+    pinMode(I2S_DIN, INPUT);
+    delay(100); 
+
+    audio = new Audio();
+    audio->setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+    audio->setVolume(21);     
+    audio->forceMono(true);   
+    if(psramFound()) audio->setBufsize(400 * 1024, -1); 
+    
+    driverInstalled = true; 
+    inSpeakerMode = true;
+    
+    xSemaphoreGive(sysMutex); // UNLOCK
+}
+
+// ==============================
+//      UI 
+// ==============================
+void updateFace() {
+    String safeStatus;
+    xSemaphoreTake(sysMutex, portMAX_DELAY);
+    safeStatus = currentStatus;
+    xSemaphoreGive(sysMutex);
+
+    face.fillSprite(TFT_BLACK);
+
+    int w = tft.width(); int h = tft.height();
+    int eyeRadius = w / 10; int eyeY = h / 3;
+    int leftEyeX = w / 4; int rightEyeX = (w * 3) / 4;
+    int mouthY = (h * 2) / 3;
+    uint16_t color = TFT_GREEN;
+
+    if (!isBlinking && millis() - lastBlink > random(2000, 6000)) { isBlinking = true; lastBlink = millis(); }
+    if (isBlinking && millis() - lastBlink > 150) { isBlinking = false; lastBlink = millis(); }
+
+    if (safeStatus == "THINKING") color = TFT_BLUE;
+    else if (safeStatus == "SPEAKING") color = TFT_WHITE; 
+    else if (safeStatus == "RECORDING") color = TFT_RED; 
+    else if (safeStatus == "CALIBRATING") color = TFT_YELLOW;
+    else color = TFT_GREEN;
+
+    if (safeStatus == "THINKING") {
+        face.fillRect(leftEyeX - eyeRadius, eyeY - 5, eyeRadius * 2, 10, color);
+        face.fillRect(rightEyeX - eyeRadius, eyeY - 5, eyeRadius * 2, 10, color);
+    } else if (isBlinking) {
+        face.fillRect(leftEyeX - eyeRadius, eyeY - 2, eyeRadius * 2, 4, color);
+        face.fillRect(rightEyeX - eyeRadius, eyeY - 2, eyeRadius * 2, 4, color);
+    } else {
+        face.fillCircle(leftEyeX, eyeY, eyeRadius, color);
+        face.fillCircle(rightEyeX, eyeY, eyeRadius, color);
+    }
+
+    if (safeStatus == "SPEAKING") {
+        if (millis() - lastMouthUpdate > 50) { 
+            if (mouthOpening) mouthHeight += 4; else mouthHeight -= 4;
+            if (mouthHeight > 40) mouthOpening = false;
+            if (mouthHeight < 5) mouthOpening = true;
+            lastMouthUpdate = millis();
+        }
+        face.fillEllipse(w/2, mouthY, 40, mouthHeight, color);
+        face.fillEllipse(w/2, mouthY, 20, mouthHeight/2, TFT_BLACK); 
+    } else if (safeStatus == "RECORDING" || safeStatus == "CALIBRATING") {
+        int r = (millis() / 100) % 2 == 0 ? 25 : 20;
+        face.fillCircle(w/2, mouthY, r, color);
+    } else {
+        face.fillCircle(w/2, mouthY, 30, color);
+        face.fillCircle(w/2, mouthY - 5, 30, TFT_BLACK); 
+    }
+
+    face.setTextColor(color, TFT_BLACK);
+    face.setTextSize(2);
+    face.setTextDatum(MC_DATUM);
+    face.drawString(safeStatus, w / 2, h - 20);
+    face.pushSprite(0, 0);
+}
+
+// ==============================
+//      TASK 1: BRAIN (AI)
+// ==============================
+void brainTask(void *pvParameters) {
+    while (true) {
+        bool shouldProcess = false;
+        
+        xSemaphoreTake(sysMutex, portMAX_DELAY);
+        if(aiRequestPending) {
+            shouldProcess = true;
+            aiRequestPending = false; 
+        }
+        xSemaphoreGive(sysMutex);
+
+        if (shouldProcess) {
+            if(WiFi.status() == WL_CONNECTED) {
+                createWavHeader(recBuffer, recordedLength);
+
+                size_t totalDataLen = recordedLength + WAV_HEADER_SIZE;
+                size_t b64Len = ((totalDataLen + 2) / 3) * 4 + 1;
+                char* b64Buffer = (char*) ps_malloc(b64Len); 
+                
+                if(b64Buffer) {
+                    size_t outputLength;
+                    mbedtls_base64_encode((unsigned char*)b64Buffer, b64Len, &outputLength, recBuffer, totalDataLen);
+                    b64Buffer[outputLength] = 0; 
+
+                    HTTPClient http;
+                    http.setTimeout(45000); 
+                    
+                    String url = "https://generativelanguage.googleapis.com/v1beta/" + currentModel + ":generateContent?key=" + GEMINI_API_KEY;
+                    http.begin(url);
+                    http.addHeader("Content-Type", "application/json");
+
+                    // SAFE JSON CONSTRUCTION
+                    snprintf(jsonBuffer, JSON_BUFFER_SIZE, 
+                        "{\"contents\":[{ \"parts\":["
+                        "{\"text\": \"You are Frank, a robot friend for a 5-year-old named Jack. Listen to the audio and reply in 1 short, cheerful sentence. Keep it simple.\"},"
+                        "{\"inline_data\": { \"mime_type\":\"audio/wav\", \"data\": \"%s\"}}"
+                        "]}]}", b64Buffer);
+
+                    int httpCode = http.POST((uint8_t*)jsonBuffer, strlen(jsonBuffer));
+                    
+                    String newResponse = "";
+                    if (httpCode == 200) {
+                        String response = http.getString();
+                        DynamicJsonDocument doc(2048); 
+                        deserializeJson(doc, response);
+                        if (doc.containsKey("candidates")) {
+                             newResponse = doc["candidates"][0]["content"]["parts"][0]["text"].as<String>();
+                        } else {
+                             newResponse = "I heard you, but I'm confused.";
+                        }
+                    } else {
+                        Serial.printf("HTTP Error: %d\n", httpCode);
+                        newResponse = "My ears are acting up.";
+                    }
+                    http.end();
+                    free(b64Buffer); 
+                    
+                    xSemaphoreTake(sysMutex, portMAX_DELAY);
+                    globalResponse = newResponse;
+                    aiResponseReady = true;
+                    xSemaphoreGive(sysMutex);
+
+                } else {
+                    xSemaphoreTake(sysMutex, portMAX_DELAY);
+                    globalResponse = "Memory Error.";
+                    aiResponseReady = true;
+                    xSemaphoreGive(sysMutex);
+                }
+            } 
+        }
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+}
+
+// ==============================
+//      TASK 2: ROBOT (Logic)
+// ==============================
+void robotTask(void *pvParameters) {
+    int16_t* pcmBuffer = (int16_t*) malloc(1024); 
+
+    while(true) {
+        if (millis() - lastFaceUpdate > 30) { updateFace(); lastFaceUpdate = millis(); }
+
+        bool isSpeaking = false;
+        bool hasResponse = false;
+        
+        xSemaphoreTake(sysMutex, portMAX_DELAY);
+        if(currentStatus == "SPEAKING") isSpeaking = true;
+        if(aiResponseReady) hasResponse = true;
+        xSemaphoreGive(sysMutex);
+
+        if (isSpeaking && millis() - speakingStartTime > 15000) {
+             Serial.println("Watchdog: Resetting stuck speaker.");
+             enterMicMode();              
+        }
+
+        if (hasResponse) {
+            xSemaphoreTake(sysMutex, portMAX_DELAY);
+            aiResponseReady = false; 
+            String responseText = globalResponse;
+            xSemaphoreGive(sysMutex);
+
+            Serial.print("Frank Said: "); Serial.println(responseText);
+            speakingStartTime = millis(); 
+            
+            xSemaphoreTake(sysMutex, portMAX_DELAY);
+            currentStatus = "SPEAKING"; 
+            xSemaphoreGive(sysMutex);
+            
+            enterSpeakerMode(); 
+            String tts = "https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=" + responseText;
+            audio->connecttohost(tts.c_str());
+        }
+
+        if (inSpeakerMode) {
+            if (audio) audio->loop(); 
+            if (audio && !audio->isRunning() && !hasResponse) { 
+                 delay(500); 
+                 enterMicMode(); 
+            }
+            vTaskDelay(1 / portTICK_PERIOD_MS); 
+        } 
+        else {
+            bool localPending;
+            xSemaphoreTake(sysMutex, portMAX_DELAY);
+            localPending = aiRequestPending;
+            xSemaphoreGive(sysMutex);
+
+            if (!localPending && millis() > micCooldown && currentStatus != "CALIBRATING") {
+                
+                size_t bytesIn = 0;
+                i2s_read(I2S_PORT, pcmBuffer, 1024, &bytesIn, 0);
+                
+                long sum = 0;
+                int samples = bytesIn / 2;
+                if(samples > 0) {
+                    for (int i = 0; i < samples; i++) sum += abs(pcmBuffer[i]);
+                    int volume = sum / samples;
+
+                    if (volume > NOISE_THRESHOLD) {  
+                        Serial.println("Trigger! Recording...");
+                        
+                        xSemaphoreTake(sysMutex, portMAX_DELAY);
+                        currentStatus = "RECORDING";
+                        xSemaphoreGive(sysMutex);
+                        
+                        recordedLength = 0; 
+                        size_t offset = WAV_HEADER_SIZE; 
+                        unsigned long lastVoiceTime = millis();
+                        unsigned long recordStart = millis();
+                        bool done = false;
+
+                        while (!done) {
+                             size_t chunkBytes = 0;
+                             if(offset + 1024 < REC_BUFFER_SIZE) {
+                                 i2s_read(I2S_PORT, (uint8_t*)(recBuffer + offset), 1024, &chunkBytes, portMAX_DELAY);
+                                 
+                                 long chunkSum = 0;
+                                 int16_t* samplePtr = (int16_t*)(recBuffer + offset);
+                                 int chunkSamples = chunkBytes / 2;
+                                 for(int k=0; k<chunkSamples; k++) chunkSum += abs(samplePtr[k]);
+                                 int chunkVol = chunkSum / chunkSamples;
+                                 
+                                 if (chunkVol > NOISE_THRESHOLD) lastVoiceTime = millis(); 
+                                 if(millis() - recordStart < MIN_RECORD_SECONDS * 1000) lastVoiceTime = millis();
+
+                                 offset += chunkBytes;
+                             } else {
+                                 done = true; 
+                             }
+                             
+                             if (millis() - lastFaceUpdate > 30) { updateFace(); lastFaceUpdate = millis(); }
+                             if (millis() - recordStart > MAX_RECORD_SECONDS * 1000) done = true; 
+                             if (millis() - lastVoiceTime > SILENCE_TIMEOUT) done = true; 
+                        }
+                        
+                        recordedLength = offset - WAV_HEADER_SIZE;
+                        Serial.printf("Rec Size: %d\n", recordedLength);
+                        
+                        xSemaphoreTake(sysMutex, portMAX_DELAY);
+                        currentStatus = "THINKING";
+                        aiRequestPending = true;
+                        xSemaphoreGive(sysMutex);
+                    }
+                }
+            }
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+    }
+}
+
+// ==============================
+//      SETUP
+// ==============================
+void setup() {
+    Serial.begin(115200);
+    delay(1000);
+    Serial.println("--- FRANK OS STARTING ---");
+    
+    sysMutex = xSemaphoreCreateMutex();
+
+    if(psramFound()){
+        Serial.printf("PSRAM Active! Total: %d bytes\n", ESP.getPsramSize());
+        recBuffer = (uint8_t*) ps_malloc(REC_BUFFER_SIZE + WAV_HEADER_SIZE + 4096);
+        jsonBuffer = (char*) ps_malloc(JSON_BUFFER_SIZE); 
+        if(!recBuffer || !jsonBuffer) Serial.println("FATAL: Buffer Alloc Failed!");
+    } else {
+        Serial.println("FATAL: No PSRAM!");
+        while(1);
+    }
+
+    pinMode(SCREEN_RST, OUTPUT);
+    digitalWrite(SCREEN_RST, HIGH); delay(50);
+    digitalWrite(SCREEN_RST, LOW); delay(50);
+    digitalWrite(SCREEN_RST, HIGH); delay(100);
+    tft.init();
+    tft.setRotation(1);
+    tft.invertDisplay(false); 
+    tft.setSwapBytes(true);
+    
+    face.setColorDepth(16); 
+    face.createSprite(tft.width(), tft.height()); 
+
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    while (WiFi.status() != WL_CONNECTED) delay(500);
+    Serial.println("WiFi Connected");
+    
+    // CALIBRATION
+    inSpeakerMode = true; 
+    enterMicMode(); 
+    
+    currentStatus = "CALIBRATING";
+    Serial.println("--- CALIBRATING ---");
+    long totalNoise = 0;
+    int samples = 0;
+    unsigned long calStart = millis();
+    int16_t tempBuf[512];
+    size_t bytesIn;
+    
+    while(millis() - calStart < 2000) {
+        i2s_read(I2S_PORT, tempBuf, 1024, &bytesIn, 0);
+        long sum = 0;
+        int s = bytesIn / 2;
+        for(int i=0; i<s; i++) sum += abs(tempBuf[i]);
+        if(s > 0) { totalNoise += (sum / s); samples++; }
+        if (millis() - lastFaceUpdate > 30) { updateFace(); lastFaceUpdate = millis(); }
+    }
+    
+    if(samples > 0) BASELINE_NOISE = totalNoise / samples;
+    NOISE_THRESHOLD = BASELINE_NOISE + (BASELINE_NOISE * 0.6); 
+    if (NOISE_THRESHOLD < 300) NOISE_THRESHOLD = 300;
+    
+    Serial.printf("Base: %d. Thresh: %d\n", BASELINE_NOISE, NOISE_THRESHOLD);
+    currentStatus = "LISTENING";
+
+    xTaskCreatePinnedToCore(brainTask, "BrainTask", 40960, NULL, 1, &aiTaskHandle, 1);
+    xTaskCreatePinnedToCore(robotTask, "RobotTask", 20480, NULL, 1, NULL, 1);
+}
+
+void loop() {
+    vTaskDelete(NULL); 
+}
