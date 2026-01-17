@@ -1,6 +1,6 @@
 # Franken-bot (Frank)
 
-This one project brought so many things that I have fallen in love together. I think its fair to say this is pushing what people can do/have done with ESP32s. 
+This one project brought so many things that I have fallen in love with together. I think its fair to say this is pushing what people can do/have done with ESP32s. 
 
 I decided to upgrade the brain and display (2.8in touch w/ SD card slot) of the StackChan to improve usability as a desk companion. I also wanted to use common, cheap/salvaged parts and 3d prints I could order from the local library. This code is 100% original and shares no lines in common with the official firmware. 
 
