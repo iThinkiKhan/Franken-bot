@@ -13,7 +13,7 @@ _I believe I have made considerable improvements to the stock firmware, such as 
 
    -Voice error messages
    
-   -Conversation history
+   -Conversation history - keep longer convos in context
    
    -Touch screen implementation
    
@@ -21,7 +21,7 @@ _I believe I have made considerable improvements to the stock firmware, such as 
    
    -Randomized locally stored prompts, no interuption
    
-   -Watchdog for Brain 2
+   - Watchdog for Brain 2
 
    - More memory fixes
 
