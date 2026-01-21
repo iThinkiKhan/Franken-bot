@@ -7,11 +7,13 @@ I also wanted to use common, cheap/salvaged parts and 3d prints I could order fr
 
 **Software:**
 
-_I believe I have made considerable improvements to the stock firmware, such as removing the local speech processing in favor of sending a raw audio file to the LLM freeing memory and enabling much more nuance in audio processing. I also took memory managment to another level. There are many more, and I continue to improve it regularly. Please share your ideas for improvements!_
+_I've implemented major changes to the stock firmware feature set, such as removing the local speech processing in favor of sending a raw audio file to the LLM freeing memory and enabling much more nuance in audio processing. I also took memory managment to another level. There are many more, and I continue to improve it regularly. Please share your ideas for improvements!_
 
    **OSv3.5**
 
    -Voice error messages
+
+   -Volume control w/ visual display
    
    -Conversation history - keep longer convos in context
    
@@ -19,7 +21,7 @@ _I believe I have made considerable improvements to the stock firmware, such as 
    
    -OTA firmware updates
    
-   -Randomized locally stored prompts, no interuption
+   -Randomized locally stored prompts, idle messages
    
    - Watchdog for Brain 2
 
