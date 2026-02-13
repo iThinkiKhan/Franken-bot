@@ -1,0 +1,54 @@
+LEFT SIDE (your orientation: USB at bottom, chip facing you)
+═══════════════════════════════════════════════════════════
+Pos  Pin        Assignment              Component
+─── ────── ─────────────────────── ──────────────
+ 1   3V3        Power rail source       POWER
+ 2   3V3        (spare 3.3V tap)        POWER
+ 3   RST        (board reset)           SYSTEM
+ 4   GPIO 4     I2S BCLK               🔊 AUDIO (future)
+ 5   GPIO 5     I2S WS/LRC             🔊 AUDIO (future)
+ 6   GPIO 6     I2S DOUT (to amp)      🔊 AUDIO (future)
+ 7   GPIO 7     I2S DIN (from mic)     🎤 AUDIO (future)
+ 8   GPIO 15    Screen Backlight (LED)  🖥️ SCREEN
+ 9   GPIO 16    Servo 1 signal         🦾 SERVO (future)
+10   GPIO 17    Servo 2 signal         🦾 SERVO (future)
+11   GPIO 18    ── FREE ──
+12   GPIO 8     ── FREE ──
+13   GPIO 3     LED - bootstrapping irrelevant
+14   GPIO 46    ⚠️ AVOID (input only, strapping)
+15   GPIO 9     Screen RESET            🖥️ SCREEN
+16   GPIO 10    Screen CS (FSPICS0)     🖥️ SCREEN ◄── Native SPI
+17   GPIO 11    Screen MOSI (FSPID)     🖥️ SCREEN ◄── Native SPI
+18   GPIO 12    Screen SCK (FSPICLK)    🖥️ SCREEN ◄── Native SPI
+19   GPIO 13    Screen MISO (FSPIQ)     🖥️ SCREEN ◄── Native SPI
+20   GPIO 14    Screen DC               🖥️ SCREEN
+21   5V         Power rail source       POWER
+22   GND        Ground rail source      POWER
+
+
+RIGHT SIDE (same orientation)
+═══════════════════════════════════════════════════════════
+Pos  Pin        Assignment              Component
+─── ────── ─────────────────────── ──────────────
+ 1   GND        Ground                  POWER
+ 2   TX (43)    Serial TX               SYSTEM
+ 3   RX (44)    Serial RX               SYSTEM
+ 4   GPIO 1     ── FREE ──
+ 5   GPIO 2     ── FREE ──
+ 6   GPIO 42    ── FREE ──
+ 7   GPIO 41    ── FREE ──
+ 8   GPIO 40    ── FREE ──
+ 9   GPIO 39    Free
+10   GPIO 38    Free
+11   GPIO 37    ☠️ DEAD (Octal PSRAM)
+12   GPIO 36    ☠️ DEAD (Octal PSRAM)
+13   GPIO 35    ☠️ DEAD (Octal PSRAM)
+14   GPIO 0     ⚠️ AVOID (boot strap)
+15   GPIO 45    ⚠️ AVOID (VDD_SPI strap)
+16   GPIO 48    ── FREE ──
+17   GPIO 47    Touch IRQ
+18   GPIO 21    T_CS
+19   GPIO 20    ⚠️ USB D+ (don't use)
+20   GPIO 19    ⚠️ USB D- (don't use)
+21   GND        Ground                  POWER
+22   GND        Ground                  POWER
