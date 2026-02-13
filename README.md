@@ -29,6 +29,15 @@ _I've implemented major changes to the stock firmware feature set, such as remov
 
    - Auto WiFi reconnect
 
+
+   **Frank V.3**
+   Now using Hoysond S3 N16R8 - cheaper
+   
+   - Complete rebuild - first S3 chip burned out. Took awhile to get back to a working hardware state. Im also rewiring for neatness, with an eye towards using the case soon.
+   - First time I have managed to get touch functionality working properly!
+   - OS v4 Incoming with all the improvements of 3.5, and more!
+   
+
    **OSv3.0**
 
    -First spoken prompt recognition!
